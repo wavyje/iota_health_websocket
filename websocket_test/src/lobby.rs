@@ -65,6 +65,8 @@ impl Handler<Connect> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: Connect, _: &mut Self::Context) {
+        
+        
         //create hashset or add ourselves
         self.rooms.entry(msg.lobby_id).or_insert(HashSet::new()).insert(msg.self_id);
         
@@ -84,7 +86,8 @@ impl Handler<Connect> for Lobby {
         );
 
         self.send_message(&format!("your id is {}", msg.self_id), &msg.self_id);
-    }
+        }
+    
 }
 
 impl Handler<ClientActorMessage> for Lobby {

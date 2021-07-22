@@ -13,6 +13,10 @@ use iota_logic::initiate::initiate;
 use iota_logic::client::create_client;
 use iota_logic::check_channel::importauthor;
 use login::upload_certificate;
+use login::check_certificate;
+
+use sha2::{Digest, Sha256, digest::FixedOutput};
+use rand::AsByteSliceMut;
 
 use actix_web::{App, HttpServer};
 
@@ -32,6 +36,7 @@ async fn main() -> std::io::Result<()> {
             .service(start_connection_route)
             .route("/login", web::post().to(login::login))
             .route("/certificate", web::post().to(login::upload_certificate))
+            .route("/CheckCertificate", web::post().to(login::check_certificate))
             .data(chat_server.clone())
     })
     .bind("192.168.0.202:8080")?

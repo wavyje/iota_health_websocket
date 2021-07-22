@@ -24,8 +24,9 @@ Result,
 
 use core::cell::RefCell;
 use rand::Rng;
+use rand::AsByteSliceMut;
 
-use std::collections::hash_map::DefaultHasher;
+use std::{collections::hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::str;
 
@@ -60,10 +61,15 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) {
     println!("Important: Note the adress!!! Channel adress: {}", &announce_link);
     println!("Base: {} ; MsgId {}", announce_link.base(), announce_link.msgid);
     
-    //export author, hash password
-    let encrypted_author = author.export("Geheimes Passwort").unwrap();
-    println!("Encrypted Author is: {:?}", String::from_utf8(encrypted_author));
-    
+   
+    //export author
+    let state = author.export("Geheimes Passwort").unwrap();
+    std::fs::write("./author_state.bin", state).unwrap();
+    //println!("Encrypted Author is: {:?}", String::from_utf8(state));
+
+    //save channel address
+    std::fs::write("./channel_address.bin", &announce_link.to_string()).unwrap();
+   
     /*
     //hash password
     let mut hasher = DefaultHasher::new();
@@ -90,5 +96,6 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) {
 
     //export subscriber, hash password
     let encrypted_subscriber = subscriber.export("abc").unwrap();
-    println!("Encrypted Subscriber is: {:?}", String::from_utf8(encrypted_subscriber));
+    std::fs::write("./subscriber_state.bin", encrypted_subscriber).unwrap();
+    //println!("Encrypted Subscriber is: {:?}", String::from_utf8(encrypted_subscriber));
 }
