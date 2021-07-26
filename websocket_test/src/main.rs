@@ -14,6 +14,8 @@ use iota_logic::client::create_client;
 use iota_logic::check_channel::importauthor;
 use login::upload_certificate;
 use login::check_certificate;
+use login::upload_health_certificate;
+use login::check_health_certificate;
 
 use sha2::{Digest, Sha256, digest::FixedOutput};
 use rand::AsByteSliceMut;
@@ -37,6 +39,8 @@ async fn main() -> std::io::Result<()> {
             .route("/login", web::post().to(login::login))
             .route("/certificate", web::post().to(login::upload_certificate))
             .route("/CheckCertificate", web::post().to(login::check_certificate))
+            .route("/healthCertificate", web::post().to(login::upload_health_certificate))
+            .route("/CheckHealthCertificate", web::post().to(login::check_health_certificate))
             .data(chat_server.clone())
     })
     .bind("192.168.0.202:8080")?

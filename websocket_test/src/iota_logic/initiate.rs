@@ -62,13 +62,7 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) {
     println!("Base: {} ; MsgId {}", announce_link.base(), announce_link.msgid);
     
    
-    //export author
-    let state = author.export("Geheimes Passwort").unwrap();
-    std::fs::write("./author_state.bin", state).unwrap();
-    //println!("Encrypted Author is: {:?}", String::from_utf8(state));
-
-    //save channel address
-    std::fs::write("./channel_address.bin", &announce_link.to_string()).unwrap();
+   
    
     /*
     //hash password
@@ -93,9 +87,38 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) {
     //subscriber subscribe to channel
     let subscribe_link = subscriber.send_subscribe(&announce_link).unwrap();
     println!("Subscribed to the channel");
+    
+
+    // create subscriber instance for reading messages
+    let seed2: &str = &(0..10)
+        .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
+        .collect::<String>();
+    let mut subscriber_reading = Subscriber::new(seed2, encoding, PAYLOAD_BYTES, transport.clone());
+
+    //subscriber join channel
+    subscriber_reading.receive_announcement(&announce_link).unwrap();
+
+    //subscriber subscribe to channel
+    let subscribe_link2 = subscriber_reading.send_subscribe(&announce_link).unwrap();
+    println!("Subscribed to the channel");
+
+
+    author.receive_subscribe(&subscribe_link).unwrap();
+    author.receive_subscribe(&subscribe_link2).unwrap();
+
+     //export author
+     let state = author.export("Geheimes Passwort").unwrap();
+     std::fs::write("./author_state.bin", state).unwrap();
+     //println!("Encrypted Author is: {:?}", String::from_utf8(state));
+ 
+     //save channel address
+     std::fs::write("./channel_address.bin", &announce_link.to_string()).unwrap();
 
     //export subscriber, hash password
     let encrypted_subscriber = subscriber.export("abc").unwrap();
     std::fs::write("./subscriber_state.bin", encrypted_subscriber).unwrap();
-    //println!("Encrypted Subscriber is: {:?}", String::from_utf8(encrypted_subscriber));
+
+
+    let encrypted_subscriber_reading = subscriber.export("").unwrap();
+    std::fs::write("./subscriber_reading_state.bin", encrypted_subscriber_reading).unwrap();
 }
