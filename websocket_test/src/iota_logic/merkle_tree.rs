@@ -1,8 +1,21 @@
 use sha2::{Digest, Sha256};
 
-pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: String, birthplace: String, nationality: String, address: String, hashedImage: String, expire: String) -> String {
-    let mut data = [firstName, lastName, birthday, birthplace, nationality, address, hashedImage, expire];
+/// generates and returns the root hash consisting of the prostitute's data
+///
+/// #Arguments
+///
+/// *firstName
+/// *lastName
+/// *birthday
+/// *birthplace
+/// *nationality
+/// *address
+/// *hashedImage
+/// *expire
+pub fn generate_merkle_tree(first_name: String, last_name: String, birthday: String, birthplace: String, nationality: String, address: String, hashed_image: String, expire: String) -> String {
+    let mut data = [first_name, last_name, birthday, birthplace, nationality, address, hashed_image, expire];
 
+    // calculate the hash for each raw data
     for element in data.iter_mut() {
         let mut hasher = Sha256::new();
         hasher.update(&element);
@@ -12,7 +25,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         *element= result_format;
     }
 
-    //leafA consists of hashedImage and firstName
+    // leafA consists of hashedImage and firstName
     let leaf_a = {
         let mut hasher = Sha256::new();
         hasher.update(String::from(&data[6]) + &String::from(&data[0]));
@@ -20,7 +33,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         let result_format: String = format!("{:x}", result);
         result_format
     };
-    //leafB consists of lastName and birthplace
+    // leafB consists of lastName and birthplace
     let leaf_b = {
         let mut hasher = Sha256::new();
         hasher.update(String::from(&data[1]) + &String::from(&data[3]));
@@ -28,7 +41,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         let result_format: String = format!("{:x}", result);
         result_format
     };
-    //leafC consists of expire and birthday
+    // leafC consists of expire and birthday
     let leaf_c = {
         let mut hasher = Sha256::new();
         hasher.update(String::from(&data[7]) + &String::from(&data[2]));
@@ -36,7 +49,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         let result_format: String = format!("{:x}", result);
         result_format
     };
-    //leafD consists of address and nationality
+    // leafD consists of address and nationality
     let leaf_d = {
         let mut hasher = Sha256::new();
         hasher.update(String::from(&data[5]) + &String::from(&data[4]));
@@ -45,7 +58,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         result_format
     };
     
-    //calculate leafAB and leafCD
+    // calculate leafAB and leafCD
     let leaf_ab = {
         let mut hasher = Sha256::new();
         hasher.update(leaf_a + &leaf_b);
@@ -60,9 +73,11 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         let result_format: String = format!("{:x}", result);
         result_format
     };
+
     println!("AB {}", &leaf_ab);
     println!("CD {}", &leaf_cd);
-    //calculate root hash
+
+    // calculate root hash
     let root = {
         let mut hasher = Sha256::new();
         hasher.update(leaf_ab + &leaf_cd);
@@ -71,8 +86,7 @@ pub fn generate_merkle_tree(firstName: String, lastName: String, birthday: Strin
         result_format
     };
 
-    
-    
     println!("root {}", &root);
+
     return root;
 }

@@ -1,16 +1,10 @@
-
-use std::rc::Rc;
-
-use actix_web::{self, App, Error, HttpMessage, HttpRequest, HttpResponse, HttpServer, Result, dev::Transform, http::{self, StatusCode}, post, web::{self, Form}};
-use iota_streams::app_channels::api::tangle::{Author, Subscriber};
-use iota_streams::app::transport::tangle::{PAYLOAD_BYTES, TangleAddress};
-use rand::AsByteSliceMut;
+use actix_web::{self, Error, HttpResponse, Result, http::{StatusCode}, web::{self}};
+use iota_streams::app_channels::api::tangle::Subscriber;
+use iota_streams::app::transport::tangle::TangleAddress;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
-use rand::Rng;
 
-use crate::iota_logic::{check_channel::{self, import_subscriber, register_certificate, register_health_certificate}, client};
-use crate::iota_logic::check_channel::importauthor;
+use crate::iota_logic::{check_channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
+use crate::iota_logic::check_channel::import_author;
 use crate::iota_logic::merkle_tree::generate_merkle_tree;
 
 #[derive(Deserialize)]
@@ -18,17 +12,22 @@ pub struct FormData {
     password: String,
 }
 
+/// tries to import author instance with sent password.
+/// if successful, a HttpResponse with body "office" is sent.
+/// if failed, tries to import subscriber with password.
+/// if successful, HttpResponse with body "doctor".
+/// if failed HttpResponse with StatusCode 403.
 pub async fn login(form: web::Form<FormData>) -> Result<HttpResponse, Error>{
     
     println!("{}", form.password);
     let transport = client::create_client();
 
-    let (success, author, _) = importauthor(transport.clone(), &form.password);
+    let (success, _author, _) = import_author(transport.clone(), &form.password);
 
     match success {
         true => Ok(HttpResponse::Ok().body("office")),
         false => {
-            let (succ, subscriber, _) = import_subscriber(transport, &form.password);
+            let (succ, _subscriber, _) = import_subscriber(transport, &form.password);
             match succ {
                 true => Ok(HttpResponse::Ok().body("doctor")),
                 false => Ok(HttpResponse::Ok().status(StatusCode::FORBIDDEN).finish())
@@ -50,15 +49,18 @@ pub struct Data {
     expire: String
 }
 
+/// First creates the root hash with the prostitute's data.
+/// Then imports author and calls post_registration_certificate.
+/// If successful, HttpResponse with message links is sent.
+/// If failed HttpResponse 403
 pub async fn upload_certificate(form: web::Form<Data>) -> Result<HttpResponse, Error>{
     
-
     let root_hash = generate_merkle_tree(form.firstName.clone(), form.lastName.clone(), form.birthday.clone(), form.birthplace.clone(), form.nationality.clone(), form.address.clone(), form.hashedImage.clone(), form.expire.clone());
     
     //create author instance
     let transport = client::create_client();
 
-    let (success, author, announce_link) = importauthor(transport, &form.password); 
+    let (success, author, announce_link) = import_author(transport, &form.password); 
 
     let auth;
     let announce;;
@@ -73,7 +75,7 @@ pub async fn upload_certificate(form: web::Form<Data>) -> Result<HttpResponse, E
 
     match success {
         true => {
-            let link_json = register_certificate(root_hash, auth, announce, &form.password);
+            let link_json = post_registration_certificate(root_hash, auth, announce, &form.password);
             
 
             Ok(HttpResponse::Ok().body(link_json))
@@ -97,6 +99,10 @@ pub struct DoctorData {
     SignedMsgId: String
 }
 
+/// First creates the root hash with the prostitute's data.
+/// Then imports subscriber and calls post_health_certificate.
+/// If successful, HttpResponse with message links is sent.
+/// If failed HttpResponse 403
 pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<HttpResponse, Error>{
     
     println!("SignedbeimUpload {}", &form.SignedMsgId);
@@ -109,11 +115,11 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     let (success, subscriber, announce_link) = import_subscriber(transport, &form.password); 
 
     let sub;
-    let announce;;
+    let _announce;
 
     if(success == true) {
         sub = subscriber.unwrap();
-        announce = announce_link.unwrap();
+        _announce = announce_link.unwrap();
     }
     else {
         return Ok(HttpResponse::Ok().status(StatusCode::FORBIDDEN).finish());
@@ -126,7 +132,7 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     
     match success {
         true => {
-            let link_json = register_health_certificate(root_hash, sub, keyload_link, signed_msg_link, &form.password);
+            let link_json = post_health_certificate(root_hash, sub, keyload_link, signed_msg_link, &form.password);
             println!("{}",link_json);
 
             Ok(HttpResponse::Ok().body(link_json))
@@ -135,11 +141,6 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     }
 }
 
-/*let auth = author.unwrap();
-                    let announce_link = announce_link.unwrap();
-                    let link_json = register_certificate(hash_as_vec, auth, announce_link);
-
-                    Ok(HttpResponse::Ok().body(link_json))*/
 
 #[derive(Deserialize)]
 pub struct CheckData {
@@ -150,6 +151,8 @@ pub struct CheckData {
     SignedMsgId: String
 }
 
+/// Calls the check_registration_certificate function.
+/// Returns either HttpResponse 200 or 403.
 pub async fn check_certificate(form: web::Form<CheckData>) -> Result<HttpResponse, Error> {
 
     println!("Checking");
@@ -157,7 +160,7 @@ pub async fn check_certificate(form: web::Form<CheckData>) -> Result<HttpRespons
     
     let transport = client::create_client();
 
-    let result = check_channel::check_certificate(transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.SignedMsgId.clone(), form.rootHash.clone());
+    let result = check_channel::check_registration_certificate(transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.SignedMsgId.clone(), form.rootHash.clone());
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),
@@ -176,10 +179,12 @@ pub struct CheckHealthData {
     TaggedMsgId: String
 }
 
+/// Imports the reading subscriber, otherwise the tagged message can not be found.
+/// Calls the check_health_certificate function.
+/// Returns either HttpResponse 200 or 403
 pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Result<HttpResponse, Error> {
 
-    println!("Checking");
-    println!("TaggedeMessgsa: {}", &form.TaggedMsgId);
+    println!("TaggedeMessage: {}", &form.TaggedMsgId);
     
     let transport = client::create_client();
 
@@ -190,7 +195,7 @@ pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Resul
     // Import state
     let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
 
-    let result = check_channel::check_health_certificate(subscriber, transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone());
+    let result = check_channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone());
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),

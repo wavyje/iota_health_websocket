@@ -1,7 +1,6 @@
 use crate::ws::WsConn;
 use crate::lobby::Lobby;
 use actix::Addr;
-use actix_web::error::ErrorBadGateway;
 use actix_web::{get, web::Data, web::Path, web::Payload, Error, HttpResponse, HttpRequest};
 use actix_web_actors::ws;
 use uuid::Uuid;

@@ -111,7 +111,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
                 msg: s,
                 room_id: self.room
             }),
-            Err(e) => panic!(e),
+            Err(e) => panic!("{}", e),
         }
     }
 }

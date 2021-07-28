@@ -95,12 +95,7 @@ impl Handler<ClientActorMessage> for Lobby {
     
     fn handle(&mut self, msg: ClientActorMessage, _: &mut Context<Self>) {
         println!("ClientActorMessage");
-        if msg.msg.starts_with("\\w") {
-            if  let Some(id_to) = msg.msg.split(' ').collect::<Vec<&str>>().get(1) {
-                self.send_message(&msg.msg, &Uuid::parse_str(id_to).unwrap());
-            }
-        }    
-        else {
+        
             self
             .rooms
             .get(&msg.room_id)
@@ -108,6 +103,5 @@ impl Handler<ClientActorMessage> for Lobby {
             .iter()
             .for_each(|client| self.send_message(&msg.msg, client));
             println!("{}", msg.msg);
-        } 
         }
 }

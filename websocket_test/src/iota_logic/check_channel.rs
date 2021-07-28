@@ -34,7 +34,7 @@ use rand::Rng;
 ///
 /// *password: &str - password with which the author was exported to the file
 #[tokio::main]
-pub async fn importauthor(transport: Rc<RefCell<Client>>, password: &str) -> (bool, Option<Author<Rc<RefCell<Client>>>>, Option<TangleAddress>){
+pub async fn import_author(transport: Rc<RefCell<Client>>, password: &str) -> (bool, Option<Author<Rc<RefCell<Client>>>>, Option<TangleAddress>){
     
 
      // Retrieve author state from file
@@ -109,7 +109,7 @@ pub async fn import_subscriber(transport: Rc<RefCell<Client>>, password: &str) -
 /// *announce_link: TangleAddress - usable channel address
 /// *password: &str - password with which the author was exported
 #[tokio::main]
-pub async fn register_certificate(data: String, mut author: Author<Rc<RefCell<Client>>>, announce_link: TangleAddress, password: &str) -> Value {
+pub async fn post_registration_certificate(data: String, mut author: Author<Rc<RefCell<Client>>>, announce_link: TangleAddress, password: &str) -> Value {
     
     // create subscriber, so that different keyloads are created
     // subscriber instances are dropped immediately after sending keyload
@@ -168,7 +168,7 @@ pub async fn register_certificate(data: String, mut author: Author<Rc<RefCell<Cl
 /// *signed_msg_link: TangelAddress - usable signed message sequence
 /// *password: &str - password with which the subscriber was exported
 #[tokio::main]
-pub async fn register_health_certificate(data: String, mut subscriber: Subscriber<Rc<RefCell<Client>>>, keyload_link: TangleAddress, signed_msg_link: TangleAddress, password: &str) -> Value {
+pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc<RefCell<Client>>>, keyload_link: TangleAddress, signed_msg_link: TangleAddress, password: &str) -> Value {
 
     // subscriber processing all new messages, so he can find the signed message
     subscriber.fetch_all_next_msgs();
@@ -184,7 +184,7 @@ pub async fn register_health_certificate(data: String, mut subscriber: Subscribe
 
     // publish tagged message linked to signed message
     let tagged_message_link = { 
-        let (msg, seq) = subscriber.send_tagged_packet(&signed_msg_link, &public_payload, &empty_masked_payload).unwrap(); 
+        let (_msg, seq) = subscriber.send_tagged_packet(&signed_msg_link, &public_payload, &empty_masked_payload).unwrap(); 
         let seq = seq.unwrap();
         seq
     };
@@ -210,7 +210,7 @@ pub async fn register_health_certificate(data: String, mut subscriber: Subscribe
 /// *signed_msg_link: String - signed message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_certificate(transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String) -> bool {
+pub async fn check_registration_certificate(transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String) -> bool {
     
     // create subscriber instance
     let encoding = "utf-8";
@@ -267,9 +267,8 @@ pub async fn check_certificate(transport: Rc<RefCell<Client>>, appInst: String, 
 /// *tagged_msg_link: String - tagged message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, tagged_msg_link: String, root_hash: String) -> bool {
+pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, appInst: String, keyload_link: String, tagged_msg_link: String, root_hash: String) -> bool {
     
-
     //IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
     subscriber.fetch_all_next_msgs();
 
@@ -280,7 +279,6 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
     
     let _result = subscriber.receive_keyload(&msg_tag);
 
-    println!("Keyload recevejd");
     // receive signed message
     let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &tagged_msg_link).unwrap()).unwrap();
     
