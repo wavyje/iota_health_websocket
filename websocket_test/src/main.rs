@@ -18,11 +18,7 @@ use actix_web::{App, HttpServer};
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
 
-    //For more information on this visit README->chapter: 1) Getting started
-    //WARNING: Only uncomment the following lines, if you know what you are doing!
-    //let transport = create_client();
-    //initiate(transport).unwrap();
-    //import_author(transport, "Geheimes Passwort");
+    // type 'cargo run initiate' to initiate or reset the channel
     let arg: Vec<_> = env::args().collect();
     if(arg.len() > 1) {
         if(arg[1] == "initiate") {

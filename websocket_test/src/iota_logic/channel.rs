@@ -210,10 +210,10 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
 /// *signed_msg_link: String - signed message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_registration_certificate(transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String) -> bool {
+pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String) -> bool {
     
     // create subscriber instance
-    let encoding = "utf-8";
+    /*let encoding = "utf-8";
     let alph9 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ9";
     let seed: &str = &(0..10)
         .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
@@ -221,7 +221,7 @@ pub async fn check_registration_certificate(transport: Rc<RefCell<Client>>, appI
 
     // subscribe to channel
     let mut subscriber = Subscriber::new(seed, encoding, PAYLOAD_BYTES, transport);
-    let _announce = subscriber.receive_announcement(&TangleAddress::from_str(&appInst, &announce_link).unwrap());
+    let _announce = subscriber.receive_announcement(&TangleAddress::from_str(&appInst, &announce_link).unwrap());*/
 
     // IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
     subscriber.fetch_all_next_msgs();
@@ -287,9 +287,6 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
     let unwrapped_public = unwrapped_public.0;
     println!("Public Message: {}", String::from_utf8(unwrapped_public.clone()).unwrap());
     println!("Transferred: {}", String::from(&root_hash));
-
-    // unregister subscriber to minimize traffic
-    subscriber.unregister();
     
     // compare public payload to root_hash, if equal return true
     if(String::from_utf8(unwrapped_public.clone()).unwrap() == String::from(&root_hash))  {

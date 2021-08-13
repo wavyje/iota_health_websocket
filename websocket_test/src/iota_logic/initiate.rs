@@ -1,4 +1,3 @@
-use actix_web::web::Buf;
 use iota_streams::{app::{message::HasLink, transport::tangle::{PAYLOAD_BYTES}}, app_channels::{api::tangle::{
     Author,
     Subscriber,

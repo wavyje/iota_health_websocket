@@ -3,8 +3,8 @@ use iota_streams::app_channels::api::tangle::Subscriber;
 use iota_streams::app::transport::tangle::TangleAddress;
 use serde::Deserialize;
 
-use crate::iota_logic::{check_channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
-use crate::iota_logic::check_channel::import_author;
+use crate::iota_logic::{channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
+use crate::iota_logic::channel::import_author;
 use crate::iota_logic::merkle_tree::generate_merkle_tree;
 
 #[derive(Deserialize)]
@@ -160,7 +160,13 @@ pub async fn check_certificate(form: web::Form<CheckData>) -> Result<HttpRespons
     
     let transport = client::create_client();
 
-    let result = check_channel::check_registration_certificate(transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.SignedMsgId.clone(), form.rootHash.clone());
+    // Retrieve State from file
+    let state = std::fs::read("./subscriber_reading_state.bin").unwrap();
+
+    // Import state
+    let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
+
+    let result = channel::check_registration_certificate(subscriber, transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.SignedMsgId.clone(), form.rootHash.clone());
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),
@@ -195,7 +201,7 @@ pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Resul
     // Import state
     let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
 
-    let result = check_channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone());
+    let result = channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone());
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),
