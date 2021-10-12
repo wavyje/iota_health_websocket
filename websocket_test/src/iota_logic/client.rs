@@ -13,7 +13,7 @@ use core::cell::RefCell;
 /// As a node the Chrysalis testnet will be used, but can be exchanged for own node or different net:
 #[tokio::main]
 pub async fn create_client() -> Rc<RefCell<Client>>{
-    let node_url = "https://api.lb-0.testnet.chrysalis2.com";
+    let node_url = "https://chrysalis-nodes.iota.org";
 
     // Creates Client
     let client = Client::new_from_url(&node_url);
