@@ -21,6 +21,7 @@ use core::cell::RefCell;
 use serde_json::{json, Value};
 use rand::Rng;
 
+use iota_streams::app_channels::api::{psk_from_seed, pskid_from_psk};
 
 
 /// Imports the author instance from file "author_state.bin" and then gets the channel address from file "channel_address.bin" and converts it
@@ -110,7 +111,12 @@ pub async fn import_subscriber(transport: Rc<RefCell<Client>>, password: &str) -
 /// *password: &str - password with which the author was exported
 #[tokio::main]
 pub async fn post_registration_certificate(data: String, mut author: Author<Rc<RefCell<Client>>>, announce_link: TangleAddress, password: &str) -> Value {
+
+    let key = rand::thread_rng().gen::<[u8; 32]>();
     
+    let psk = psk_from_seed(&key);
+    let pskId = pskid_from_psk(&psk);
+
     // create subscriber, so that different keyloads are created
     // subscriber instances are dropped immediately after sending keyload
     let encoding = "utf-8";
