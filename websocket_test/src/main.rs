@@ -27,6 +27,7 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
+    println!("Running Server!");
     let ws_server = Lobby::default().start();
 
     HttpServer::new(move || {
