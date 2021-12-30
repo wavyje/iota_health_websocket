@@ -1,6 +1,8 @@
+use std::collections::LinkedList;
+
 use actix_web::{self, Error, HttpResponse, Result, http::{StatusCode}, web::{self}};
-use iota_streams::app_channels::api::tangle::Subscriber;
-use iota_streams::app::transport::tangle::TangleAddress;
+use iota_streams::app_channels::api::{tangle::Subscriber, psk_from_seed, pskid_from_psk};
+use iota_streams::app::transport::tangle::{TangleAddress, PAYLOAD_BYTES};
 use serde::Deserialize;
 
 use crate::iota_logic::{channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
@@ -96,7 +98,8 @@ pub struct DoctorData {
     hashedImage: String,
     expire: String,
     KeyloadMsgId: String,
-    SignedMsgId: String
+    SignedMsgId: String,
+    PskSeed: String
 }
 
 /// First creates the root hash with the prostitute's data.
@@ -110,6 +113,14 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     
     //create author instance
     let transport = client::create_client();
+
+    let seed = form.PskSeed.split(",").collect::<Vec<&str>>();
+    
+    let mut Psk: [u8;32] = [0; 32];
+
+    for i in 0..32 {
+        Psk[i] = seed[i].parse::<u8>().unwrap();
+    }
 
 
     let (success, subscriber, announce_link) = import_subscriber(transport, &form.password); 
@@ -132,7 +143,7 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     
     match success {
         true => {
-            let link_json = post_health_certificate(root_hash, sub, keyload_link, signed_msg_link, &form.password);
+            let link_json = post_health_certificate(root_hash, sub, keyload_link, signed_msg_link, &form.password, Psk);
             println!("{}",link_json);
 
             Ok(HttpResponse::Ok().body(link_json))
@@ -148,7 +159,8 @@ pub struct CheckData {
     appInst: String,
     AnnounceMsgId: String,
     KeyloadMsgId: String,
-    SignedMsgId: String
+    SignedMsgId: String,
+    PskSeed: String
 }
 
 /// Calls the check_registration_certificate function.
@@ -160,13 +172,23 @@ pub async fn check_certificate(form: web::Form<CheckData>) -> Result<HttpRespons
     
     let transport = client::create_client();
 
+    let seed = form.PskSeed.split(",").collect::<Vec<&str>>();
+    
+    let mut Psk: [u8;32] = [0; 32];
+
+    for i in 0..32 {
+        Psk[i] = seed[i].parse::<u8>().unwrap();
+    }
+
+    
     // Retrieve State from file
-    let state = std::fs::read("./subscriber_reading_state.bin").unwrap();
+    //let state = std::fs::read("./subscriber_reading_state.bin").unwrap();
 
     // Import state
-    let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
+    //let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
+    let subscriber = Subscriber::new("", "utf-8", PAYLOAD_BYTES, transport.clone());
 
-    let result = channel::check_registration_certificate(subscriber, transport, form.appInst.clone(), form.AnnounceMsgId.clone(), form.KeyloadMsgId.clone(), form.SignedMsgId.clone(), form.rootHash.clone());
+    let result = channel::check_registration_certificate(subscriber, transport,form.appInst.clone(),form.AnnounceMsgId.clone(),form.KeyloadMsgId.clone(),form.SignedMsgId.clone(),form.rootHash.clone(),Psk);
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),
@@ -182,7 +204,8 @@ pub struct CheckHealthData {
     appInst: String,
     AnnounceMsgId: String,
     KeyloadMsgId: String,
-    TaggedMsgId: String
+    TaggedMsgId: String,
+    PskSeed: String
 }
 
 /// Imports the reading subscriber, otherwise the tagged message can not be found.
@@ -194,14 +217,18 @@ pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Resul
     
     let transport = client::create_client();
 
+    let seed = form.PskSeed.split(",").collect::<Vec<&str>>();
+    
+    let mut Psk: [u8;32] = [0; 32];
 
-    // Retrieve State from file
-    let state = std::fs::read("./subscriber_reading_state.bin").unwrap();
+    for i in 0..32 {
+        Psk[i] = seed[i].parse::<u8>().unwrap();
+    }
 
     // Import state
-    let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
+    let subscriber = Subscriber::new("swadawdsadgbc", "utf-8", PAYLOAD_BYTES, transport.clone());
 
-    let result = channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone());
+    let result = channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone(), Psk);
 
     match result {
         true => return Ok(HttpResponse::Ok().finish()),
