@@ -23,6 +23,7 @@ use serde_json::{json, Value};
 use rand::Rng;
 
 use iota_streams::app_channels::api::{psk_from_seed, pskid_from_psk, pskid_from_str, Psk, PskId};
+use super::super::database;
 
 
 /// Imports the author instance from file "author_state.bin" and then gets the channel address from file "channel_address.bin" and converts it
@@ -178,6 +179,23 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
 #[tokio::main]
 pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc<RefCell<Client>>>, keyload_link: TangleAddress, signed_msg_link: TangleAddress, password: &str, pskSeed: [u8;32]) -> Value {
 
+    //sub must join the channel
+
+    // get channel address
+    let ann = std::fs::read("./channel_address.bin").unwrap();
+    let ann_str = str::from_utf8(&ann).unwrap();
+
+    //turn address into TangleAddress
+    let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
+    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+
+    subscriber.receive_announcement(&announce_link).unwrap();
+    subscriber.send_subscribe(&announce_link).unwrap();
+    subscriber.fetch_all_next_msgs();
+    
+
+    /////////////////////////////
+
      //retrieve psk
      let psk = psk_from_seed(&pskSeed);
      let psk_id = pskid_from_psk(&psk);
@@ -288,8 +306,9 @@ pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCel
 /// *tagged_msg_link: String - tagged message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, appInst: String, keyload_link: String, tagged_msg_link: String, root_hash: String, pskSeed: [u8;32]) -> bool {
+pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, appInst: String, keyload_link: String, tagged_msg_link: String, root_hash: String, pskSeed: [u8;32]) -> (bool, bool) {
     
+
     //retrieve psk
     let psk = psk_from_seed(&pskSeed);
     let psk_id = pskid_from_psk(&psk);
@@ -327,12 +346,33 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
     let unwrapped_public = unwrapped_public.0;
     println!("Public Message: {}", String::from_utf8(unwrapped_public.clone()).unwrap());
     println!("Transferred: {}", String::from(&root_hash));
+
+    let payload_string = String::from_utf8(unwrapped_public.clone()).unwrap();
+    let payload_vector = payload_string.split(":").collect::<Vec<&str>>();
+    let certificate_hash = payload_vector[1];
+    let doctor_lanr = payload_vector[0];
+
+    //collects the results of the querys
+    //(doctor not on blacklist = true, certificate valid = true)
+    let mut result: (bool, bool) = (false, false);
     
     // compare public payload to root_hash, if equal return true
-    if(String::from_utf8(unwrapped_public.clone()).unwrap() == String::from(&root_hash))  {
-        return true;
+    if certificate_hash == String::from(&root_hash)  {
+        result.1 = true;
     }
-    else {
-        return false;
+    
+    //check if lanr is on the blacklist
+    let blacklist_query = database::search_blacklist(String::from(doctor_lanr));
+       
+    match blacklist_query {
+        Err(e) => {
+            result.0 = true;
+        },
+        Ok(()) => {
+            result.0 = false;
+        }
     }
+
+    result
+    
 }
