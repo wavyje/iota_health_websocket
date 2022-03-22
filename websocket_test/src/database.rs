@@ -170,6 +170,22 @@ pub fn remove_doctor_from_blacklist(lanr: String) -> Result<()> {
     }
 }
 
+pub fn remove_doctor(lanr: String) -> Result<()> {
+    let conn = Connection::open("doctors.db")?;
+
+    let mut stmt = conn.prepare(
+        "DELETE from doctors
+            WHERE lanr = ?",
+    )?;
+
+    let result = stmt.execute([lanr.to_string()]);
+
+    match result {
+        Ok(rows) => Ok(()),
+        Err(_e) => Err(Error::InvalidParameterName(lanr.to_string()))
+    }
+}
+
 /// searches for lanr in table "doctors"
 /// tries to match the password
 /// if matching returns Ok()

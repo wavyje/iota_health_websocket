@@ -5,6 +5,7 @@ use actix_web::{self, Error, HttpResponse, Result, http::{StatusCode}, web::{sel
 use iota_streams::app_channels::api::{tangle::Subscriber, psk_from_seed, pskid_from_psk};
 use iota_streams::app::transport::tangle::{TangleAddress, PAYLOAD_BYTES};
 use serde::Deserialize;
+use rand::Rng;
 
 use crate::iota_logic::{channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
 use crate::iota_logic::channel::import_author;
@@ -80,16 +81,75 @@ pub struct DoctorRegistration {
 /// - name
 /// - password
 pub async fn first_login(form: web::Form<DoctorRegistration>) -> Result<HttpResponse, Error> {
+    
     // check prüfziffer
     // alternating times 4; times 9
     // sum %10
     // result - 10 = prüfungsziffer
     // (Difference == 10 -> prüfungsziffer == 0)
+    let lanr = form.lanr.clone();
+    println!("{}",lanr);
 
-    let success = database::insert_doctor(form.name.clone(), form.lanr.clone(), form.password.clone());
+    if lanr.len() != 9 {
+        return Ok(HttpResponse::BadRequest().finish());
+    }
 
-    // insert doctor in database
-    Ok(HttpResponse::Ok().finish())
+    let lanr_vec: Vec<_> = lanr.split_terminator("").skip(1).collect();
+
+    let mut lanr_as_int: Vec<i32> = vec!();
+
+    for i in lanr_vec {
+
+        let success = i.parse::<i32>();
+
+        match success {
+            Err(_e) => {return Ok(HttpResponse::BadRequest().finish());}
+            Ok(res) => {
+                lanr_as_int.push(res);
+            }
+        }
+    }
+
+    let mut sum = 0;
+
+    for i in 0..6 {
+        println!("{}", lanr_as_int[i]);
+        if i%2 == 0 {
+            sum += lanr_as_int[i]*4;
+        }
+        else {
+            sum += lanr_as_int[i]*9;
+        }
+    }
+
+    sum = sum%10;
+
+    println!("{}",sum);
+
+    //if the checking number (index 6 in lanr) is unequal to the result, then lanr is invalid
+    if !(10-sum).eq(&lanr_as_int[6]) && sum != 10{
+        return Ok(HttpResponse::BadRequest().finish());
+    }
+    //if the result is 10 and the checking number is not 0, the lanr is invalid
+    if !&lanr_as_int[6].eq(&0) && sum == 10 {
+        return Ok(HttpResponse::BadRequest().finish());
+    }
+
+    
+    let exist_query = database::search_doctor(form.lanr.clone());
+
+    match exist_query {
+        Ok(()) => Ok(HttpResponse::Conflict().finish()),
+        Err(_e) => {
+            let success = database::insert_doctor(form.name.clone(), form.lanr.clone(), form.password.clone());
+
+            match success {
+                Err(_e) => Ok(HttpResponse::BadRequest().finish()),
+                Ok(()) => Ok(HttpResponse::Ok().finish())
+            }
+        }
+    }
+
 }
 
 #[derive(Deserialize)]
@@ -116,6 +176,17 @@ pub async fn remove_doctor_from_blacklist(form: web::Form<DoctorBlacklist>) -> R
 
     println!("HERE");
     let success = database::remove_doctor_from_blacklist(form.lanr.clone());
+
+    match success {
+        Ok(()) => Ok(HttpResponse::Ok().finish()),
+        Err(_e) => Ok(HttpResponse::BadRequest().finish())
+    }
+}
+
+pub async fn remove_doctor(form: web::Form<DoctorBlacklist>) -> Result<HttpResponse, Error> {
+
+    println!("{}", form.lanr.clone());
+    let success = database::remove_doctor(form.lanr.clone());
 
     match success {
         Ok(()) => Ok(HttpResponse::Ok().finish()),
@@ -229,10 +300,13 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     else {
         return Ok(HttpResponse::Ok().status(StatusCode::FORBIDDEN).finish());
     }*/
-
+    let alph9 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ9";
+    let seed: &str = &(0..10)
+    .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
+    .collect::<String>();
     //TODO: check if subscriber exists!
 
-    let sub = Subscriber::new(&form.lanr.clone(), "utf-8", PAYLOAD_BYTES, transport.clone());
+    let sub = Subscriber::new(&seed, "utf-8", PAYLOAD_BYTES, transport.clone());
 
     
     println!("sml: {}, kml: {}", form.SignedMsgId, form.KeyloadMsgId);
@@ -324,7 +398,7 @@ pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Resul
         Psk[i] = seed[i].parse::<u8>().unwrap();
     }
 
-    // Import state
+    // create new subscriber to read
     let subscriber = Subscriber::new("swadawdsadgbc", "utf-8", PAYLOAD_BYTES, transport.clone());
 
     let result = channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone(), Psk);

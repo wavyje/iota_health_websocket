@@ -46,6 +46,7 @@ async fn main() -> std::io::Result<()> {
             .route("/doctor_login", web::post().to(login::doctor_login))
             .route("/put_blacklist", web::post().to(login::put_doctor_on_blacklist))
             .route("/remove_from_blacklist", web::post().to(login::remove_doctor_from_blacklist))
+            .route("/remove_doctor", web::post().to(login::remove_doctor))
             .route("/certificate", web::post().to(login::upload_certificate))
             .route("/CheckCertificate", web::post().to(login::check_certificate))
             .route("/healthCertificate", web::post().to(login::upload_health_certificate))
