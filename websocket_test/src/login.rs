@@ -74,6 +74,7 @@ pub struct DoctorRegistration {
     lanr: String,
     password: String
 }
+
 /// method for registering new doctors in the database
 /// authorizes to post health certificates
 /// must provide:
@@ -87,6 +88,7 @@ pub async fn first_login(form: web::Form<DoctorRegistration>) -> Result<HttpResp
     // sum %10
     // result - 10 = prüfungsziffer
     // (Difference == 10 -> prüfungsziffer == 0)
+    // source: https://de.wikipedia.org/wiki/Lebenslange_Arztnummer
     let lanr = form.lanr.clone();
     println!("{}",lanr);
 
