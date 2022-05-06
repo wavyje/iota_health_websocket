@@ -1,3 +1,4 @@
+
 mod ws;
 mod messages;
 mod lobby;
@@ -6,30 +7,31 @@ mod login;
 mod iota_logic;
 mod database;
 use actix::Actor;
-use actix_web::{web, test::init_service};
+use actix_web::web;
 use std::env;
+use std::sync::Arc;
 use lobby::Lobby;
 use start_connection::start_connection as start_connection_route;
 
+use rustls::{ServerConfig, NoClientAuth};
+use rustls_pemfile::certs;
+use rustls::Certificate;
+
+use rustls::ResolvesServerCertUsingSNI;
+use rustls::sign::{SigningKey, RSASigningKey};
+
 use iota_logic::initiate::initiate;
 use iota_logic::client::create_client;
-use database::init_database;
 
 use actix_web::{App, HttpServer};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
 
-    //database::insert_doctor(String::from("DrHouse"), String::from("230332956"), String::from("hd5f4dsf54aw5d48vc5v256")).unwrap();
-    //database::insert_doctor(String::from("DrDorian"), String::from("230415486"), String::from("jgz54he98s61vs2yaf846489")).unwrap();
-    //database::insert_doctor(String::from("DrCox"), String::from("230769124"), String::from("tuz4n56cv1nbdf9498f4as65fa98")).unwrap();
-    //database::blacklist_doctor(String::from("230332956"));
-    
-
     // type 'cargo run initiate' to initiate or reset the channel
     let arg: Vec<_> = env::args().collect();
-    if(arg.len() > 1) {
-        if(arg[1] == "initiate") {
+    if arg.len() > 1 {
+        if arg[1] == "initiate" {
             let transport = create_client();
             initiate(transport).unwrap();
         }
@@ -37,6 +39,8 @@ async fn main() -> std::io::Result<()> {
 
     println!("Running Server!");
     let ws_server = Lobby::default().start();
+
+    let config = load_ssl();
 
     HttpServer::new(move || {
         App::new()
@@ -53,7 +57,89 @@ async fn main() -> std::io::Result<()> {
             .route("/CheckHealthCertificate", web::post().to(login::check_health_certificate))
             .data(ws_server.clone())
     })
-    .bind("192.168.0.202:8080")?
+    .bind_rustls("134.106.186:8080", config)?
+    .server_hostname("bling02.vlba.uni-oldenburg.de")
     .run()
     .await
+}
+
+fn load_ssl() -> rustls::ServerConfig {
+    use std::io::BufReader;
+ 
+    const CERT: &'static [u8] = include_bytes!("cert.pem");
+    const KEY: &'static [u8] = include_bytes!("key.pem");
+ 
+    let mut cert = BufReader::new(CERT);
+    let mut key = BufReader::new(KEY);
+
+    let cert_chain = certs(&mut cert)
+        .unwrap()
+        .iter()
+        .map(|v| Certificate(v.clone()))
+        .collect();
+
+    let mut keys = rustls::PrivateKey(Vec::new()); 
+    loop {
+            match rustls_pemfile::read_one(&mut key).expect("cannot parse private key .pem file") {
+                Some(rustls_pemfile::Item::RSAKey(key)) => keys = rustls::PrivateKey(key),
+                Some(rustls_pemfile::Item::PKCS8Key(key)) => keys = rustls::PrivateKey(key),
+                Some(rustls_pemfile::Item::ECKey(key)) => keys = rustls::PrivateKey(key),
+                None => break,
+                _ => {}
+            }
+        }
+ 
+        let mut config = ServerConfig::new(NoClientAuth::new());
+        config.set_single_cert(cert_chain, keys).unwrap();
+
+    //connect to hostname
+    let mut resolver = ResolvesServerCertUsingSNI::new();
+
+    add_certificate_to_resolver("iota_health", "bling02.vlba.uni-oldenburg.de", &mut resolver);
+
+    config.cert_resolver = Arc::new(resolver);
+
+    config
+ 
+ }
+
+ fn add_certificate_to_resolver(
+    name: &str, hostname: &str,
+    resolver: &mut ResolvesServerCertUsingSNI
+) {
+    use std::io::BufReader;
+ 
+    const CERT: &'static [u8] = include_bytes!("cert.pem");
+    const KEY: &'static [u8] = include_bytes!("key.pem");
+ 
+    let mut cert = BufReader::new(CERT);
+    let mut key = BufReader::new(KEY);
+
+    let cert_chain = certs(&mut cert)
+        .unwrap()
+        .iter()
+        .map(|v| Certificate(v.clone()))
+        .collect();
+
+    let mut keys = rustls::PrivateKey(Vec::new()); 
+    loop {
+            match rustls_pemfile::read_one(&mut key).expect("cannot parse private key .pem file") {
+                Some(rustls_pemfile::Item::RSAKey(key)) => keys = rustls::PrivateKey(key),
+                Some(rustls_pemfile::Item::PKCS8Key(key)) => keys = rustls::PrivateKey(key),
+                Some(rustls_pemfile::Item::ECKey(key)) => keys = rustls::PrivateKey(key),
+                None => break,
+                _ => {}
+            }
+        }
+    let signing_key = RSASigningKey::new(
+        &keys
+    ).unwrap();
+    
+    let signing_key_boxed: Arc<Box<dyn SigningKey>> = Arc::new(
+        Box::new(signing_key)
+    );
+
+    resolver.add(hostname, rustls::sign::CertifiedKey::new(
+        cert_chain, signing_key_boxed
+    )).expect("Invalid certificate for corona.ai");
 }

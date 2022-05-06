@@ -18,7 +18,7 @@ Result,
 Errors::ApplicationInstanceMismatch
 },
 };
-
+use std::error::Error;
 use core::cell::RefCell;
 use rand::Rng;
 

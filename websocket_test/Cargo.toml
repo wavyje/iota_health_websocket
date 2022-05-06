@@ -6,9 +6,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "3.2.0"
+actix-web = {version = "3.2.0", features = ["rustls"] }
 actix-web-actors = "3"
 actix = "0.10.0"
+anyhow = "1.0.56"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 serde = "1.0.1"
 serde_json = "1.0"
@@ -16,5 +17,7 @@ iota-streams = { git = "https://github.com/iotaledger/streams.git", branch = "ch
 iota-client = { git = "https://github.com/iotaledger/iota.rs", branch = "dev" }
 rand = "0.7.3"
 rusqlite = { version = "0.26.3", features = ["bundled"] }
+rustls = "0.18.0"
+rustls-pemfile = "0.3.0"
 tokio = {version = "1.6"}
 sha2 = "0.9.5"
