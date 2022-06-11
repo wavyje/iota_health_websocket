@@ -2,14 +2,16 @@
 
 use actix::actors::resolver::ResolverError;
 use actix_web::{self, Error, HttpResponse, Result, http::{StatusCode}, web::{self}};
-use iota_streams::app_channels::api::{tangle::Subscriber, psk_from_seed, pskid_from_psk};
-use iota_streams::app::transport::tangle::{TangleAddress, PAYLOAD_BYTES};
+use iota_streams::{app_channels::api::{tangle::{Subscriber, MsgId}, psk_from_seed, pskid_from_psk}, app::transport::tangle::AppInst};
+use iota_streams::app::transport::tangle::{TangleAddress};
 use serde::Deserialize;
 use rand::Rng;
 
 use crate::iota_logic::{channel::{self, import_subscriber, post_registration_certificate, post_health_certificate}, client};
 use crate::iota_logic::channel::import_author;
 use crate::iota_logic::merkle_tree::generate_merkle_tree;
+
+use std::str::FromStr;
 
 use crate::database;
 
@@ -308,13 +310,16 @@ pub async fn upload_health_certificate(form: web::Form<DoctorData>) -> Result<Ht
     .collect::<String>();
     //TODO: check if subscriber exists!
 
-    let sub = Subscriber::new(&seed, "utf-8", PAYLOAD_BYTES, transport.clone());
+    let sub = Subscriber::new(&seed, transport.clone());
 
     
     println!("sml: {}, kml: {}", form.SignedMsgId, form.KeyloadMsgId);
-    
-    let keyload_link = TangleAddress::from_str(&form.appInst.clone(), &form.KeyloadMsgId).unwrap();
-    let signed_msg_link = TangleAddress::from_str(&form.appInst.clone(), &form.SignedMsgId).unwrap();
+
+    let keyload_str = form.appInst.clone() + ":" + &form.KeyloadMsgId;
+    let signed_msg_str = form.appInst.clone() + ":" + &form.SignedMsgId;
+
+    let keyload_link = TangleAddress::from_str(&keyload_str).unwrap();
+    let signed_msg_link = TangleAddress::from_str(&signed_msg_str).unwrap();
     
     
             let link_json = post_health_certificate(payload, sub, keyload_link, signed_msg_link, &form.password, Psk);
@@ -358,7 +363,7 @@ pub async fn check_certificate(form: web::Form<CheckData>) -> Result<HttpRespons
 
     // Import state
     //let subscriber = Subscriber::import(&state, "", transport.clone()).unwrap();
-    let subscriber = Subscriber::new("", "utf-8", PAYLOAD_BYTES, transport.clone());
+    let subscriber = Subscriber::new("", transport.clone());
 
     let result = channel::check_registration_certificate(subscriber, transport,form.appInst.clone(),form.AnnounceMsgId.clone(),form.KeyloadMsgId.clone(),form.SignedMsgId.clone(),form.rootHash.clone(),Psk);
 
@@ -401,7 +406,7 @@ pub async fn check_health_certificate(form: web::Form<CheckHealthData>) -> Resul
     }
 
     // create new subscriber to read
-    let subscriber = Subscriber::new("swadawdsadgbc", "utf-8", PAYLOAD_BYTES, transport.clone());
+    let subscriber = Subscriber::new("swadawdsadgbc", transport.clone());
 
     let result = channel::check_health_certificate(subscriber, form.appInst.clone(), form.KeyloadMsgId.clone(), form.TaggedMsgId.clone(), form.rootHash.clone(), Psk);
 
