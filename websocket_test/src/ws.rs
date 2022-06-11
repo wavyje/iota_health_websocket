@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(50);
 
 pub struct WsConn {
     room: Uuid,
@@ -93,10 +93,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
                 ctx.pong(&msg);
             } 
             Ok(ws::Message::Pong(_)) => {
+                println!("Pong");
                 self.hb = Instant::now();
             }
             Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
             Ok(ws::Message::Close(reason)) => {
+                println!("CLOSEDS");
                 ctx.close(reason);
                 ctx.stop();
 

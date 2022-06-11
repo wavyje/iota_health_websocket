@@ -1,5 +1,6 @@
-use std::{str, vec};
+use std::{str, vec, collections::LinkedList, convert::{TryFrom, TryInto}};
 
+use actix_web::http::header::IntoHeaderValue;
 use iota_streams::{app::{message::HasLink, transport::tangle::{PAYLOAD_BYTES, TangleAddress}}, app_channels::{api::tangle::{
     Author,
     Subscriber,
@@ -21,6 +22,8 @@ use core::cell::RefCell;
 use serde_json::{json, Value};
 use rand::Rng;
 
+use iota_streams::app_channels::api::{psk_from_seed, pskid_from_psk, pskid_from_str, Psk, PskId};
+use super::super::database;
 
 
 /// Imports the author instance from file "author_state.bin" and then gets the channel address from file "channel_address.bin" and converts it
@@ -110,28 +113,34 @@ pub async fn import_subscriber(transport: Rc<RefCell<Client>>, password: &str) -
 /// *password: &str - password with which the author was exported
 #[tokio::main]
 pub async fn post_registration_certificate(data: String, mut author: Author<Rc<RefCell<Client>>>, announce_link: TangleAddress, password: &str) -> Value {
-    
-    // create subscriber, so that different keyloads are created
-    // subscriber instances are dropped immediately after sending keyload
-    let encoding = "utf-8";
-    let alph9 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ9";
-    let seed: &str = &(0..10)
-        .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
-        .collect::<String>();
-        println!("{}",seed);
 
-    // get subscriber's public key
-    let subscriber = Subscriber::new(seed, encoding, PAYLOAD_BYTES, author.get_transport().clone());
-    let sub_pk = vec![PublicKey::from_bytes(subscriber.get_pk().as_bytes()).unwrap()];
+    let key = rand::thread_rng().gen::<[u8; 32]>();
+    
+    //transform key into string seed for json
+    let mut seed = String::new();
+
+    for i in 0..32 {
+        seed.push_str(&key[i].to_string());
+        if i<31 {
+            seed.push_str(",");
+        }
+    }
+    
+    let psk = psk_from_seed(&key);
+
+    let psk_id = pskid_from_psk(&psk);
+    
+
 
     // author synchronizing the state
     author.fetch_state().unwrap();
+    author.store_psk(psk_id, psk);
 
     println!("{}, ::::: {}", &announce_link, &author.channel_address().unwrap());
     
     // create branch with sub's public key
     let keyload_link = {
-        let (_msg, seq) = author.send_keyload(&announce_link, &[], &sub_pk).unwrap();
+        let (_msg, seq) = author.send_keyload(&announce_link, &[psk_id], &vec![]).unwrap();
         let seq = seq.unwrap();
         seq
     };
@@ -149,7 +158,7 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
     };
 
     //put message links in json
-    let res_json = json!({"appInst": announce_link.base().to_string(), "AnnounceMsgId": announce_link.msgid.to_string(), "KeyloadMsgId": keyload_link.msgid.to_string(), "SignedMsgId": signed_message_link.msgid.to_string()});
+    let res_json = json!({"appInst": announce_link.base().to_string(), "AnnounceMsgId": announce_link.msgid.to_string(), "KeyloadMsgId": keyload_link.msgid.to_string(), "SignedMsgId": signed_message_link.msgid.to_string(), "PskSeed": seed});
     
     //export author again with password
     let state = author.export(&password).unwrap();
@@ -168,7 +177,30 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
 /// *signed_msg_link: TangelAddress - usable signed message sequence
 /// *password: &str - password with which the subscriber was exported
 #[tokio::main]
-pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc<RefCell<Client>>>, keyload_link: TangleAddress, signed_msg_link: TangleAddress, password: &str) -> Value {
+pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc<RefCell<Client>>>, keyload_link: TangleAddress, signed_msg_link: TangleAddress, password: &str, pskSeed: [u8;32]) -> Value {
+
+    //sub must join the channel
+
+    // get channel address
+    let ann = std::fs::read("./channel_address.bin").unwrap();
+    let ann_str = str::from_utf8(&ann).unwrap();
+
+    //turn address into TangleAddress
+    let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
+    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+
+    subscriber.receive_announcement(&announce_link).unwrap();
+    subscriber.send_subscribe(&announce_link).unwrap();
+    subscriber.fetch_all_next_msgs();
+    
+
+    /////////////////////////////
+
+     //retrieve psk
+     let psk = psk_from_seed(&pskSeed);
+     let psk_id = pskid_from_psk(&psk);
+
+     subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned());
 
     // subscriber processing all new messages, so he can find the signed message
     subscriber.fetch_all_next_msgs();
@@ -210,18 +242,25 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
 /// *signed_msg_link: String - signed message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String) -> bool {
+pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, transport: Rc<RefCell<Client>>, appInst: String, announce_link: String, keyload_link: String, signed_msg_link: String, root_hash: String, pskSeed: [u8; 32]) -> bool {
     
-    // create subscriber instance
-    /*let encoding = "utf-8";
-    let alph9 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ9";
-    let seed: &str = &(0..10)
-        .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
-        .collect::<String>();
+    //retrieve psk
+    let psk = psk_from_seed(&pskSeed);
+    let psk_id = pskid_from_psk(&psk);
 
-    // subscribe to channel
-    let mut subscriber = Subscriber::new(seed, encoding, PAYLOAD_BYTES, transport);
-    let _announce = subscriber.receive_announcement(&TangleAddress::from_str(&appInst, &announce_link).unwrap());*/
+
+    // get channel address
+    let ann = std::fs::read("./channel_address.bin").unwrap();
+    let ann_str = str::from_utf8(&ann).unwrap();
+
+    //turn address into TangleAddress
+    let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
+    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+
+    subscriber.receive_announcement(&announce_link).unwrap();
+    subscriber.send_subscribe(&announce_link).unwrap();
+    subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned());
+    
 
     // IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
     subscriber.fetch_all_next_msgs();
@@ -267,8 +306,26 @@ pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCel
 /// *tagged_msg_link: String - tagged message address
 /// root_hash: String - hash of the user's data, was calculated on the mobile device
 #[tokio::main]
-pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, appInst: String, keyload_link: String, tagged_msg_link: String, root_hash: String) -> bool {
+pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Client>>>, appInst: String, keyload_link: String, tagged_msg_link: String, root_hash: String, pskSeed: [u8;32]) -> (bool, bool) {
     
+
+    //retrieve psk
+    let psk = psk_from_seed(&pskSeed);
+    let psk_id = pskid_from_psk(&psk);
+
+
+    // get channel address
+    let ann = std::fs::read("./channel_address.bin").unwrap();
+    let ann_str = str::from_utf8(&ann).unwrap();
+
+    //turn address into TangleAddress
+    let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
+    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+
+    subscriber.receive_announcement(&announce_link).unwrap();
+    subscriber.send_subscribe(&announce_link).unwrap();
+    subscriber.store_psk(psk_id, psk);
+
     //IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
     subscriber.fetch_all_next_msgs();
 
@@ -279,7 +336,9 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
     
     let _result = subscriber.receive_keyload(&msg_tag);
 
-    // receive signed message
+    subscriber.fetch_all_next_msgs();
+
+    // receive tagged message
     let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &tagged_msg_link).unwrap()).unwrap();
     
     let (unwrapped_public, _) = subscriber.receive_tagged_packet(&msg_tag).unwrap();
@@ -287,12 +346,33 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
     let unwrapped_public = unwrapped_public.0;
     println!("Public Message: {}", String::from_utf8(unwrapped_public.clone()).unwrap());
     println!("Transferred: {}", String::from(&root_hash));
+
+    let payload_string = String::from_utf8(unwrapped_public.clone()).unwrap();
+    let payload_vector = payload_string.split(":").collect::<Vec<&str>>();
+    let certificate_hash = payload_vector[1];
+    let doctor_lanr = payload_vector[0];
+
+    //collects the results of the querys
+    //(doctor not on blacklist = true, certificate valid = true)
+    let mut result: (bool, bool) = (false, false);
     
     // compare public payload to root_hash, if equal return true
-    if(String::from_utf8(unwrapped_public.clone()).unwrap() == String::from(&root_hash))  {
-        return true;
+    if certificate_hash == String::from(&root_hash)  {
+        result.1 = true;
     }
-    else {
-        return false;
+    
+    //check if lanr is on the blacklist
+    let blacklist_query = database::search_blacklist(String::from(doctor_lanr));
+       
+    match blacklist_query {
+        Err(e) => {
+            result.0 = true;
+        },
+        Ok(()) => {
+            result.0 = false;
+        }
     }
+
+    result
+    
 }

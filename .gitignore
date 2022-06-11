@@ -1,5 +1,9 @@
 debug/
 target/
+author_state.bin
+channel_address.bin
+subscriber_reading_state.bin
+subscriber_state.bin
 
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html

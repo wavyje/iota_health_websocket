@@ -18,12 +18,14 @@ Result,
 Errors::ApplicationInstanceMismatch
 },
 };
-
+use std::error::Error;
 use core::cell::RefCell;
 use rand::Rng;
 
 use sha2::{Digest, Sha256};
 use std::{str, io};
+
+use crate::database;
 
 /// here channel is created, author instance and subscriber instance created
 ///
@@ -137,6 +139,9 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
     std::fs::write("./subscriber_reading_state.bin", encrypted_subscriber_reading)?;
 
     println!("All instances exported, channel was created");
+
+    //initiate database for doctor login and blacklist
+    database::init_database()?;
 
     Ok(())
 }
