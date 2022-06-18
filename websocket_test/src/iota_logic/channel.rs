@@ -1,7 +1,9 @@
 use std::{str, vec, collections::LinkedList, convert::{TryFrom, TryInto}};
 
+use std::str::FromStr;
+
 use actix_web::http::header::IntoHeaderValue;
-use iota_streams::{app::{message::HasLink, transport::tangle::{PAYLOAD_BYTES, TangleAddress}}, app_channels::{api::tangle::{
+use iota_streams::{app::{message::HasLink, transport::tangle::{TangleAddress}, identifier::Identifier}, app_channels::{api::tangle::{
     Author,
     Subscriber,
     PublicKey
@@ -44,7 +46,7 @@ pub async fn import_author(transport: Rc<RefCell<Client>>, password: &str) -> (b
      let state = std::fs::read("./author_state.bin").unwrap();
 
      // Import author instance
-     let author = Author::import(&state, &password, transport);
+     let author = Author::import(&state, &password, transport).await;
 
      //catch error
     match author {
@@ -58,7 +60,8 @@ pub async fn import_author(transport: Rc<RefCell<Client>>, password: &str) -> (b
 
     //turn address into TangleAddress
     let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
-    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+    let announce_str = String::from(ann_link_split[0]) + ":" + ann_link_split[1];
+    let announce_link = TangleAddress::from_str(&announce_str).unwrap();
    
     println!("Address: {}", &announce_link);
 
@@ -82,7 +85,7 @@ pub async fn import_subscriber(transport: Rc<RefCell<Client>>, password: &str) -
      let state = std::fs::read("./subscriber_state.bin").unwrap();
 
      // Import state
-     let subscriber = Subscriber::import(&state, &password, transport);
+     let subscriber = Subscriber::import(&state, &password, transport).await;
 
      // catch error
     match subscriber {
@@ -96,7 +99,8 @@ pub async fn import_subscriber(transport: Rc<RefCell<Client>>, password: &str) -
 
     // turn address into TangleAddress
     let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
-    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+    let announce_str = String::from(ann_link_split[0]) + ":" + ann_link_split[1];
+    let announce_link = TangleAddress::from_str(&announce_str).unwrap();
    
     println!("Address: {}", &announce_link);
 
@@ -129,18 +133,18 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
     let psk = psk_from_seed(&key);
 
     let psk_id = pskid_from_psk(&psk);
-    
-
+    //Identifier from PskId is required by new IOTA Streams version
+    let i = Identifier::PskId(psk_id);
 
     // author synchronizing the state
     author.fetch_state().unwrap();
-    author.store_psk(psk_id, psk);
+    author.store_psk(psk_id, psk).unwrap();
 
     println!("{}, ::::: {}", &announce_link, &author.channel_address().unwrap());
     
     // create branch with sub's public key
     let keyload_link = {
-        let (_msg, seq) = author.send_keyload(&announce_link, &[psk_id], &vec![]).unwrap();
+        let (_msg, seq) = author.send_keyload(&announce_link, [i].into_iter()).await.unwrap();
         let seq = seq.unwrap();
         seq
     };
@@ -152,7 +156,7 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
 
     // author publishes signed message linked to keyload message
     let signed_message_link = { 
-        let (_msg, seq) = author.send_signed_packet(&keyload_link, &public_payload, &empty_masked_payload).unwrap(); 
+        let (_msg, seq) = author.send_signed_packet(&keyload_link, &public_payload, &empty_masked_payload).await.unwrap(); 
         let seq = seq.unwrap();
         seq
     };
@@ -161,7 +165,7 @@ pub async fn post_registration_certificate(data: String, mut author: Author<Rc<R
     let res_json = json!({"appInst": announce_link.base().to_string(), "AnnounceMsgId": announce_link.msgid.to_string(), "KeyloadMsgId": keyload_link.msgid.to_string(), "SignedMsgId": signed_message_link.msgid.to_string(), "PskSeed": seed});
     
     //export author again with password
-    let state = author.export(&password).unwrap();
+    let state = author.export(&password).await.unwrap();
     std::fs::write("./author_state.bin", state).unwrap();
 
     return res_json;
@@ -187,11 +191,12 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
 
     //turn address into TangleAddress
     let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
-    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+    let announce_str = String::from(ann_link_split[0]) + ":" + ann_link_split[1];
+    let announce_link = TangleAddress::from_str(&announce_str).unwrap();
 
-    subscriber.receive_announcement(&announce_link).unwrap();
-    subscriber.send_subscribe(&announce_link).unwrap();
-    subscriber.fetch_all_next_msgs();
+    subscriber.receive_announcement(&announce_link).await.unwrap();
+    subscriber.send_subscribe(&announce_link).await.unwrap();
+    subscriber.sync_state().await.unwrap();
     
 
     /////////////////////////////
@@ -200,15 +205,15 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
      let psk = psk_from_seed(&pskSeed);
      let psk_id = pskid_from_psk(&psk);
 
-     subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned());
+     subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned()).unwrap();
 
     // subscriber processing all new messages, so he can find the signed message
-    subscriber.fetch_all_next_msgs();
+    subscriber.sync_state().await.unwrap();
 
     // receive keyload
-    let msg_tag =  subscriber.receive_sequence(&keyload_link).unwrap();
+    let msg_tag =  subscriber.receive_sequence(&keyload_link).await.unwrap();
     
-    let _result = subscriber.receive_keyload(&msg_tag);
+    let _result = subscriber.receive_keyload(&msg_tag).await;
 
     // create payload with hash, masked payload is empty
     let public_payload = Bytes(data.as_bytes().to_vec());
@@ -216,7 +221,7 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
 
     // publish tagged message linked to signed message
     let tagged_message_link = { 
-        let (_msg, seq) = subscriber.send_tagged_packet(&signed_msg_link, &public_payload, &empty_masked_payload).unwrap(); 
+        let (_msg, seq) = subscriber.send_tagged_packet(&signed_msg_link, &public_payload, &empty_masked_payload).await.unwrap(); 
         let seq = seq.unwrap();
         seq
     };
@@ -225,7 +230,7 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
     let res_json = json!({"Certificate": "health_certificate", "TaggedMsgId": tagged_message_link.msgid.to_string()});
     
     //export subscriber again
-    let state = subscriber.export(&password).unwrap();
+    let state = subscriber.export(&password).await.unwrap();
     std::fs::write("./subscriber_state.bin", state).unwrap();
 
     return res_json;
@@ -255,28 +260,33 @@ pub async fn check_registration_certificate(mut subscriber: Subscriber<Rc<RefCel
 
     //turn address into TangleAddress
     let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
-    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+    let announce_str = String::from(ann_link_split[0]) + ":" + ann_link_split[1];
+    let announce_link = TangleAddress::from_str(&announce_str).unwrap();
 
-    subscriber.receive_announcement(&announce_link).unwrap();
-    subscriber.send_subscribe(&announce_link).unwrap();
-    subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned());
+    subscriber.receive_announcement(&announce_link).await.unwrap();
+    subscriber.send_subscribe(&announce_link).await.unwrap();
+    subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned()).unwrap();
     
 
     // IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
-    subscriber.fetch_all_next_msgs();
+    subscriber.sync_state().await.unwrap();
 
     println!("Keyload {}", &keyload_link);
 
+
+    let keyload_str = appInst.clone() + ":" + &keyload_link;
+
     // receive keyload
-    let msg_tag =  subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &keyload_link).unwrap()).unwrap();
+    let msg_tag =  subscriber.receive_sequence(&TangleAddress::from_str(&keyload_str).unwrap()).await.unwrap();
     
-    let _result = subscriber.receive_keyload(&msg_tag);
+    let _result = subscriber.receive_keyload(&msg_tag).await;
     
+    let signed_str = appInst.clone() + ":" + &signed_msg_link;
 
     // receive signed message
-    let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &signed_msg_link).unwrap()).unwrap();
+    let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&signed_str).unwrap()).await.unwrap();
     
-    let (_signer_pk, unwrapped_public, _) = subscriber.receive_signed_packet(&msg_tag).unwrap();
+    let (_signer_pk, unwrapped_public, _) = subscriber.receive_signed_packet(&msg_tag).await.unwrap();
     
     // get public payload
     let unwrapped_public = unwrapped_public.0;
@@ -320,28 +330,33 @@ pub async fn check_health_certificate(mut subscriber: Subscriber<Rc<RefCell<Clie
 
     //turn address into TangleAddress
     let ann_link_split = ann_str.split(':').collect::<Vec<&str>>();
-    let announce_link = TangleAddress::from_str(ann_link_split[0], ann_link_split[1]).unwrap();
+    let announce_str = String::from(ann_link_split[0]) + ":" + ann_link_split[1];
+    let announce_link = TangleAddress::from_str(&announce_str).unwrap();
 
-    subscriber.receive_announcement(&announce_link).unwrap();
-    subscriber.send_subscribe(&announce_link).unwrap();
-    subscriber.store_psk(psk_id, psk);
+    subscriber.receive_announcement(&announce_link).await.unwrap();
+    subscriber.send_subscribe(&announce_link).await.unwrap();
+    subscriber.store_psk(psk_id, psk).unwrap();
 
     //IMPORTANT, OTHERWISE IT WILL NOT FIND ANY MESSAGES
-    subscriber.fetch_all_next_msgs();
+    subscriber.sync_state().await.unwrap();
 
     println!("Keyload {}", &keyload_link);
 
-    // receive keyload
-    let msg_tag =  subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &keyload_link).unwrap()).unwrap();
-    
-    let _result = subscriber.receive_keyload(&msg_tag);
+    let keyload_str = appInst.clone() + ":" + &keyload_link;
 
-    subscriber.fetch_all_next_msgs();
+    // receive keyload
+    let msg_tag =  subscriber.receive_sequence(&TangleAddress::from_str(&keyload_str).unwrap()).await.unwrap();
+    
+    let _result = subscriber.receive_keyload(&msg_tag).await;
+    
+    subscriber.sync_state().await.unwrap();
+
+    let tagged_str = appInst.clone() + ":" + &tagged_msg_link;
 
     // receive tagged message
-    let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&appInst, &tagged_msg_link).unwrap()).unwrap();
+    let msg_tag = subscriber.receive_sequence(&TangleAddress::from_str(&tagged_str).unwrap()).await.unwrap();
     
-    let (unwrapped_public, _) = subscriber.receive_tagged_packet(&msg_tag).unwrap();
+    let (unwrapped_public, _) = subscriber.receive_tagged_packet(&msg_tag).await.unwrap();
     
     let unwrapped_public = unwrapped_public.0;
     println!("Public Message: {}", String::from_utf8(unwrapped_public.clone()).unwrap());

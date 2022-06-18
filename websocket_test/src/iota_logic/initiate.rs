@@ -1,4 +1,4 @@
-use iota_streams::{app::{message::HasLink, transport::tangle::{PAYLOAD_BYTES}}, app_channels::{api::tangle::{
+use iota_streams::{app::{message::HasLink}, app_channels::{api::tangle::{
     Author,
     Subscriber,
 }}, core::{
@@ -47,7 +47,7 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
     let seed: &str = &(0..10)
         .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
         .collect::<String>();
-    let mut author = Author::new(seed, encoding, PAYLOAD_BYTES, multi_branching, transport.clone());
+    let mut author = Author::new(seed, iota_streams::app_channels::ChannelType::MultiBranch, transport.clone());
 
     let mut tmp = String::new();
     
@@ -68,7 +68,7 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
         println!("Author created! Note down the seed, in case the password is lost: {}", seed);
     
     // publish channel, print adress
-    let announce_link = author.send_announce()?;
+    let announce_link = author.send_announce().await?;
     println!("Channel published!");
     println!("Channel address: {}", &announce_link);
     println!("Base: {} ; MsgId {}", announce_link.base(), announce_link.msgid);
@@ -77,7 +77,7 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
     let seed1: &str = &(0..10)
         .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
         .collect::<String>();
-    let mut subscriber = Subscriber::new(seed1, encoding, PAYLOAD_BYTES, transport.clone());
+    let mut subscriber = Subscriber::new(seed1, transport.clone());
 
     let mut tmp = String::new();
 
@@ -97,11 +97,11 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
         println!("Subscriber created! Note down the seed, in case the password is lost: {}", seed1);
 
     // subscriber join channel
-    subscriber.receive_announcement(&announce_link)?;
-    try_or!(author.channel_address() == subscriber.channel_address(), ApplicationInstanceMismatch(String::from("Channel not matching")))?;
+    subscriber.receive_announcement(&announce_link).await?;
+    //try_or!(author.channel_address() == subscriber.channel_address(), ApplicationInstanceMismatch(String::from("Channel not matching"))).await?;
 
     //subscriber subscribe to channel
-    let subscribe_link = subscriber.send_subscribe(&announce_link)?;
+    let subscribe_link = subscriber.send_subscribe(&announce_link).await?;
     println!("Subscribed to the channel");
     
 
@@ -109,33 +109,33 @@ pub async fn initiate(transport: Rc<RefCell<Client>>) -> Result<()>{
     let seed2: &str = &(0..10)
         .map(|_| alph9.chars().nth(rand::thread_rng().gen_range(0, 27)).unwrap())
         .collect::<String>();
-    let mut subscriber_reading = Subscriber::new(seed2, encoding, PAYLOAD_BYTES, transport.clone());
+    let mut subscriber_reading = Subscriber::new(seed2, transport.clone());
 
     // subscriber join channel
-    subscriber_reading.receive_announcement(&announce_link)?;
+    subscriber_reading.receive_announcement(&announce_link).await?;
 
     //subscriber subscribe to channel
-    let subscribe_link2 = subscriber_reading.send_subscribe(&announce_link)?;
+    let subscribe_link2 = subscriber_reading.send_subscribe(&announce_link).await?;
     println!("Subscribed to the channel");
 
 
-    author.receive_subscribe(&subscribe_link)?;
-    author.receive_subscribe(&subscribe_link2)?;
+    author.receive_subscribe(&subscribe_link).await?;
+    author.receive_subscribe(&subscribe_link2).await?;
 
      //export author
      println!("{}", &result_format);
-     let state = author.export(&result_format)?;
+     let state = author.export(&result_format).await?;
      std::fs::write("./author_state.bin", state)?;
  
      //save channel address
      std::fs::write("./channel_address.bin", &announce_link.to_string())?;
 
     //export subscriber, hash password
-    let encrypted_subscriber = subscriber.export(&result_format2)?;
+    let encrypted_subscriber = subscriber.export(&result_format2).await?;
     std::fs::write("./subscriber_state.bin", encrypted_subscriber)?;
 
 
-    let encrypted_subscriber_reading = subscriber.export("")?;
+    let encrypted_subscriber_reading = subscriber.export("").await?;
     std::fs::write("./subscriber_reading_state.bin", encrypted_subscriber_reading)?;
 
     println!("All instances exported, channel was created");

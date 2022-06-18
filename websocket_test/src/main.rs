@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
     println!("Running Server!");
     let ws_server = Lobby::default().start();
 
-    let config = load_ssl();
+    //let config = load_ssl();
 
     HttpServer::new(move || {
         App::new()
@@ -57,8 +57,8 @@ async fn main() -> std::io::Result<()> {
             .route("/CheckHealthCertificate", web::post().to(login::check_health_certificate))
             .data(ws_server.clone())
     })
-    .bind_rustls("134.106.186:8080", config)?
-    .server_hostname("bling02.vlba.uni-oldenburg.de")
+    .bind("192.168.0.202:8080")?
+    //.server_hostname("bling02.vlba.uni-oldenburg.de")
     .run()
     .await
 }
