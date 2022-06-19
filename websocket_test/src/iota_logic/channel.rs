@@ -205,7 +205,7 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
      let psk = psk_from_seed(&pskSeed);
      let psk_id = pskid_from_psk(&psk);
 
-     subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned()).unwrap();
+    // subscriber.store_psk(PskId::from_slice(&psk_id).to_owned(), Psk::from_slice(&psk).to_owned()).unwrap();
 
     // subscriber processing all new messages, so he can find the signed message
     subscriber.sync_state().await.unwrap();
@@ -230,8 +230,8 @@ pub async fn post_health_certificate(data: String, mut subscriber: Subscriber<Rc
     let res_json = json!({"Certificate": "health_certificate", "TaggedMsgId": tagged_message_link.msgid.to_string()});
     
     //export subscriber again
-    let state = subscriber.export(&password).await.unwrap();
-    std::fs::write("./subscriber_state.bin", state).unwrap();
+    /*let state = subscriber.export(&password).await.unwrap();
+    std::fs::write("./subscriber_state.bin", state).unwrap();*/
 
     return res_json;
 }
